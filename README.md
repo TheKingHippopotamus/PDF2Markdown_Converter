@@ -212,3 +212,11 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE) for detai
 Nir Elmaliah
 ---
 
+Demo video: [YouTube](https://youtu.be/GZdxzbws6b8)
+
+<!-- YouTube iframe embed (works in Markdown viewers that support HTML, not on GitHub) -->
+<p align="center">
+  <iframe width="560" height="315" src="https://www.youtube.com/embed/GZdxzbws6b8" title="PDF2MD Demo" frameborder="0" allowfullscreen></iframe>
+</p>
+<!-- Note: GitHub does not render iframes in README, but local Markdown viewers and some platforms do. -->
+

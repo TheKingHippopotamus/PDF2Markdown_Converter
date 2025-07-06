@@ -80,32 +80,19 @@ class DownloadThread(QThread):
             self.progress.emit("Download completed successfully!")
             self.finished.emit(True, self.output_path)
 
-        except requests.exceptions.HTTPError as e:
-            if e.response.status_code == 403:
-                error_msg = f"Access forbidden (403). The server is blocking direct downloads. Try:\n1. Opening the URL in a browser first\n2. Using a different PDF URL\n3. Downloading manually and using the 'Local File' tab"
-            elif e.response.status_code == 404:
-                error_msg = f"File not found (404). The PDF URL may be incorrect or the file has been moved."
-            else:
-                error_msg = f"HTTP Error {e.response.status_code}: {e.response.reason}"
-            self.progress.emit(f"Download failed: {error_msg}")
-            self.finished.emit(False, error_msg)
-
-        except requests.exceptions.Timeout:
-            error_msg = "Download timed out. The server is taking too long to respond."
-            self.progress.emit(f"Download failed: {error_msg}")
-            self.finished.emit(False, error_msg)
-
-        except requests.exceptions.ConnectionError:
-            error_msg = (
-                "Connection error. Please check your internet connection and try again."
-            )
-            self.progress.emit(f"Download failed: {error_msg}")
-            self.finished.emit(False, error_msg)
-
         except Exception as e:
             error_msg = f"Download failed: {str(e)}"
             self.progress.emit(error_msg)
             self.finished.emit(False, error_msg)
+            # Show error popup
+            QMessageBox.critical(None, "Download Error", error_msg)
+            # Log error to file in Downloads
+            try:
+                log_path = os.path.expanduser("~/Downloads/pdf2md_log.txt")
+                with open(log_path, "a", encoding="utf-8") as logf:
+                    logf.write(error_msg + "\n")
+            except Exception:
+                pass
 
 
 class ConverterThread(QThread):
@@ -335,7 +322,13 @@ class PDF2MDGui(QWidget):
 
         # Create temp directory if it doesn't exist
         temp_dir = Path("temp_downloads")
-        temp_dir.mkdir(exist_ok=True)
+        try:
+            temp_dir.mkdir(exist_ok=True)
+        except Exception as e:
+            QMessageBox.critical(
+                self, "Error", f"Could not create temp_downloads directory: {e}"
+            )
+            return
 
         # Generate meaningful filename based on URL
         try:
