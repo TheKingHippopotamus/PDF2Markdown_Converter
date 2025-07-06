@@ -1,0 +1,26 @@
+# PDF to Markdown Converter Dependencies
+
+# PDF processing
+PyPDF2>=3.0.0
+pdfplumber>=0.9.0
+
+# GUI framework
+tkinter  # Usually comes with Python installation
+
+# Text processing
+markdown>=3.4.0
+
+# File handling
+pathlib  # Built-in with Python 3.4+
+
+# Optional: For better text extraction
+pdfminer.six>=20221105
+
+# Optional: For image handling in PDFs
+Pillow>=9.0.0
+
+# Optional: For better table extraction
+tabula-py>=2.6.0
+
+# Optional: For progress bars
+tqdm>=4.64.0 
