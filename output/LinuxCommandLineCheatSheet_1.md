@@ -1,6 +1,6 @@
 # Linuxcommandlinecheatsheet 1
 
-*Converted from PDF on 2025-07-06 11:13:48*
+*Converted from PDF on 2025-07-06 17:49:40*
 
 
 ## Page 1

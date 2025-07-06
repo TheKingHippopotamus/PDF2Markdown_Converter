@@ -1,0 +1,26 @@
+# Cursor Rules for PDF to Markdown Converter
+
+# Python Interpreter Configuration
+PYTHON_INTERPRETER=/Users/kinghippo/Documents/rssFeed/marketBit/venv/bin/python
+
+# Project Context
+This is a PDF to Markdown converter project with GUI interface.
+Use the specified Python interpreter for all code generation and analysis.
+
+# Code Style
+- Use Python 3.7+ syntax
+- Follow PEP 8 style guidelines
+- Include type hints where appropriate
+- Add docstrings for functions and classes
+
+# Dependencies
+- PyPDF2 for PDF processing
+- pdfplumber for text extraction
+- tkinter for GUI
+- markdown for text processing
+
+# File Structure
+- convert_pdf_to_markdown.py: Main conversion logic
+- pdf2md_gui.py: Graphical user interface
+- output/: Directory for converted markdown files
+- temp_downloads/: Temporary files (ignored by git) 

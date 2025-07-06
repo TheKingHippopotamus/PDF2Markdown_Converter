@@ -1,0 +1,16 @@
+{
+    "venvPath": "/Users/kinghippo/Documents/rssFeed/marketBit",
+    "venv": "venv",
+    "pythonPath": "/Users/kinghippo/Documents/rssFeed/marketBit/venv/bin/python",
+    "typeCheckingMode": "basic",
+    "useLibraryCodeForTypes": true,
+    "autoImportCompletions": true,
+    "include": [
+        "."
+    ],
+    "exclude": [
+        "**/node_modules",
+        "**/__pycache__",
+        "temp_downloads"
+    ]
+}
