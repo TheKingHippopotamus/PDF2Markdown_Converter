@@ -65,6 +65,8 @@ pdf2md_app/
 פרויקט זה זמין תחת רישיון MIT
 This project is available under the MIT License
 
+**מפתח / Developer:** [TheKingHippopotamus](https://github.com/TheKingHippopotamus)
+
 ## תרומה / Contributing
 
 תרומות יתקבלו בברכה! אנא צור issue או pull request
