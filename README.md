@@ -109,6 +109,30 @@ python pdf2md_gui.py
 - Set output file name.
 - Click "Convert" – Markdown file will be saved in the `output/` folder.
 
+#### יצירת קובץ GUI עצמאי (exe/app)
+
+לאחר הרצת PyInstaller (למשל:
+```bash
+pyinstaller --onefile --windowed --add-data="Screenshot 2025-07-06 at 18.57.50.png:." pdf2md_gui.py
+```
+)
+נוצרים שני קבצים עיקריים בתיקיית `dist/`:
+
+- **pdf2md_gui** – קובץ הרצה שניתן להריץ מהטרמינל (./pdf2md_gui)
+- **pdf2md_gui.app** – אפליקציה גרפית מלאה ל-macOS (ניתן לפתוח ב-double click מה-Finder)
+
+ב-Windows יווצר קובץ exe בשם pdf2md_gui.exe.
+
+**איך למצוא?**
+לאחר ההרצה, עבור לתיקיית `dist/` שבתוך הפרויקט. שם תמצא את קבצי ההרצה.
+
+**איך להריץ?**
+- ב-macOS: פתח את pdf2md_gui.app או הרץ בטרמינל ./pdf2md_gui
+- ב-Windows: לחץ פעמיים על pdf2md_gui.exe
+
+#### איפה נשמרים קבצי ה-Markdown?
+קבצי ה-Markdown שנוצרים נשמרים כברירת מחדל בתיקיית ה-Downloads של המשתמש (`~/Downloads`), אלא אם בחרת יעד אחר ב-GUI.
+
 ### שורת פקודה (CLI) | Command Line
 
 #

@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
 )
 from PySide6.QtCore import Qt, QThread, Signal
+import os
 
 from convert_pdf_to_markdown import PDFToMarkdownConverter
 
@@ -110,6 +111,7 @@ class DownloadThread(QThread):
 class ConverterThread(QThread):
     progress = Signal(str)
     finished = Signal(bool, str)
+    progress_percent = Signal(int)
 
     def __init__(self, pdf_path, output_path, config):
         super().__init__()
@@ -119,11 +121,49 @@ class ConverterThread(QThread):
 
     def run(self):
         try:
+            import pdfplumber
+
             converter = PDFToMarkdownConverter(self.config)
             self.progress.emit(f"Converting: {self.pdf_path}")
             self.progress.emit(f"Config keys: {list(self.config.keys())}")
-            success = converter.convert_pdf_to_markdown(self.pdf_path, self.output_path)
-            self.finished.emit(success, self.output_path)
+
+            markdown_content = []
+            title = Path(self.pdf_path).stem.replace("_", " ").title()
+            markdown_content.append(f"# {title}")
+            from datetime import datetime
+
+            markdown_content.append(
+                f"\n*Converted from PDF on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*"
+            )
+            markdown_content.append("")
+
+            with pdfplumber.open(self.pdf_path) as pdf:
+                total_pages = len(pdf.pages)
+                for page_num, page in enumerate(pdf.pages, 1):
+                    self.progress.emit(f"Processing page {page_num}/{total_pages}...")
+                    text = page.extract_text()
+                    if text:
+                        cleaned_text = converter.clean_text(text)
+                        if cleaned_text:
+                            markdown_lines = converter.process_text_block(
+                                cleaned_text, page_num
+                            )
+                            markdown_content.extend(markdown_lines)
+                    tables = converter.extract_tables(page)
+                    for table in tables:
+                        markdown_content.append(table)
+                        markdown_content.append("")
+                    images = converter.extract_images(page)
+                    for image in images:
+                        markdown_content.append(image)
+                        markdown_content.append("")
+                    percent = int((page_num / total_pages) * 100)
+                    self.progress_percent.emit(percent)
+
+            with open(self.output_path, "w", encoding="utf-8") as f:
+                f.write("\n".join(markdown_content))
+
+            self.finished.emit(True, self.output_path)
         except Exception as e:
             self.progress.emit(f"Conversion error: {str(e)}")
             self.finished.emit(False, str(e))
@@ -136,8 +176,8 @@ class PDF2MDGui(QWidget):
         self.setMinimumWidth(600)
         self.setMinimumHeight(400)
 
-        # Ensure output directory exists
-        self.output_dir = Path("output")
+        # Set output directory to user's Downloads folder
+        self.output_dir = Path(os.path.expanduser("~/Downloads"))
         self.output_dir.mkdir(exist_ok=True)
 
         self.init_ui()
@@ -218,6 +258,12 @@ class PDF2MDGui(QWidget):
         self.status.setReadOnly(True)
         self.status.setFixedHeight(150)
         layout.addWidget(self.status)
+
+        # Progress bar for conversion
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        layout.addWidget(self.progress_bar)
 
         self.setLayout(layout)
 
@@ -323,17 +369,18 @@ class PDF2MDGui(QWidget):
 
     def download_finished(self, success, result):
         if success:
-            downloaded_filename = Path(self.temp_pdf_path).name
-            self.download_status.setText(f"Downloaded: {downloaded_filename}")
+            if self.temp_pdf_path:
+                downloaded_filename = Path(self.temp_pdf_path).name
+                self.download_status.setText(f"Downloaded: {downloaded_filename}")
 
-            # Suggest output file in output directory with meaningful name
-            pdf_name = Path(self.temp_pdf_path).stem
-            out_file = str(self.output_dir / f"{pdf_name}.md")
-            self.out_input.setText(out_file)
+                # Suggest output file in output directory with meaningful name
+                pdf_name = Path(self.temp_pdf_path).stem
+                out_file = str(self.output_dir / f"{pdf_name}.md")
+                self.out_input.setText(out_file)
 
-            # Show success message with file locations
-            self.status.append(f"✓ Downloaded: {downloaded_filename}")
-            self.status.append(f"✓ Output will be saved to: {out_file}")
+                # Show success message with file locations
+                self.status.append(f"✓ Downloaded: {downloaded_filename}")
+                self.status.append(f"✓ Output will be saved to: {out_file}")
         else:
             self.download_status.setText("Download failed!")
             QMessageBox.warning(
@@ -386,14 +433,17 @@ class PDF2MDGui(QWidget):
         self.status.clear()
         self.status.append("Starting conversion...")
         self.start_btn.setEnabled(False)
+        self.progress_bar.setValue(0)
         self.converter_thread = ConverterThread(pdf_path, output_path, config)
         self.converter_thread.progress.connect(self.status.append)
         self.converter_thread.finished.connect(self.conversion_finished)
+        self.converter_thread.progress_percent.connect(self.progress_bar.setValue)
         self.converter_thread.start()
 
     def conversion_finished(self, success, output_path):
         if success:
             self.status.append(f"\nSuccess! Markdown saved to: {output_path}")
+            self.progress_bar.setValue(100)
 
             # Handle temporary PDF cleanup
             if self.temp_pdf_path and Path(self.temp_pdf_path).exists():
@@ -405,38 +455,43 @@ class PDF2MDGui(QWidget):
                     self.ask_delete_temp_file()
         else:
             self.status.append("\nConversion failed.")
+            self.progress_bar.setValue(0)
         self.start_btn.setEnabled(True)
 
     def delete_temp_file(self):
         """Delete temporary PDF file without asking."""
-        temp_file = Path(self.temp_pdf_path)
-        if temp_file.exists():
-            try:
-                temp_file.unlink()  # Delete the file
-                self.status.append(f"✓ Auto-deleted temporary file: {temp_file.name}")
-                self.temp_pdf_path = None  # Clear the reference
-            except Exception as e:
-                self.status.append(f"⚠ Could not delete temporary file: {str(e)}")
+        if self.temp_pdf_path:
+            temp_file = Path(self.temp_pdf_path)
+            if temp_file.exists():
+                try:
+                    temp_file.unlink()  # Delete the file
+                    self.status.append(
+                        f"✓ Auto-deleted temporary file: {temp_file.name}"
+                    )
+                    self.temp_pdf_path = None  # Clear the reference
+                except Exception as e:
+                    self.status.append(f"⚠ Could not delete temporary file: {str(e)}")
 
     def ask_delete_temp_file(self):
         """Ask user if they want to delete the temporary PDF file."""
-        temp_file = Path(self.temp_pdf_path)
-        if temp_file.exists():
-            reply = QMessageBox.question(
-                self,
-                "Delete Temporary File",
-                f"Conversion completed successfully!\n\n"
-                f"Would you like to delete the temporary PDF file?\n"
-                f"File: {temp_file.name}\n"
-                f"Location: {temp_file.parent}",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
+        if self.temp_pdf_path:
+            temp_file = Path(self.temp_pdf_path)
+            if temp_file.exists():
+                reply = QMessageBox.question(
+                    self,
+                    "Delete Temporary File",
+                    f"Conversion completed successfully!\n\n"
+                    f"Would you like to delete the temporary PDF file?\n"
+                    f"File: {temp_file.name}\n"
+                    f"Location: {temp_file.parent}",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
 
-            if reply == QMessageBox.StandardButton.Yes:
-                self.delete_temp_file()
-            else:
-                self.status.append(f"ℹ Kept temporary file: {temp_file.name}")
+                if reply == QMessageBox.StandardButton.Yes:
+                    self.delete_temp_file()
+                else:
+                    self.status.append(f"ℹ Kept temporary file: {temp_file.name}")
 
 
 if __name__ == "__main__":
