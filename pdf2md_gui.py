@@ -314,19 +314,21 @@ class PDF2MDGui(QWidget):
         if not url:
             QMessageBox.warning(self, "Error", "Please enter a valid URL.")
             return
-
         # Better URL validation
         if not url.startswith(("http://", "https://")):
             QMessageBox.warning(self, "Error", "Please enter a valid HTTP/HTTPS URL.")
             return
+        # Create temp directory in Downloads if it doesn't exist
+        import os
 
-        # Create temp directory if it doesn't exist
-        temp_dir = Path("temp_downloads")
+        temp_dir = Path(os.path.expanduser("~/Downloads/temp_downloads"))
         try:
             temp_dir.mkdir(exist_ok=True)
         except Exception as e:
             QMessageBox.critical(
-                self, "Error", f"Could not create temp_downloads directory: {e}"
+                self,
+                "Error",
+                f"Could not create temp_downloads directory in Downloads: {e}",
             )
             return
 
