@@ -19,8 +19,19 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QThread, Signal
 import os
+import re
 
-from convert_pdf_to_markdown import PDFToMarkdownConverter
+from convert_pdf_to_markdown import (
+    PDFToMarkdownConverter,
+    OllamaClient,
+    split_markdown_to_chunks,
+    count_tokens,
+    log_event,
+    clean_chunk_text,
+    split_markdown_by_pages,
+)
+
+from tkinter import scrolledtext
 
 
 class DownloadThread(QThread):
@@ -162,6 +173,18 @@ class PDF2MDGui(QWidget):
         self.setWindowTitle("PDF to Markdown Converter")
         self.setMinimumWidth(600)
         self.setMinimumHeight(400)
+        self.setGeometry(620, 0, 600, 800)
+        self.setStyleSheet(
+            """
+            QWidget { background-color: #232136; color: #e0def4; }
+            QTextEdit, QLineEdit { background-color: #2a273f; color: #e0def4; border: 1px solid #444; }
+            QLabel { color: #e0def4; }
+            QPushButton { background-color: #393552; color: #e0def4; border: 1px solid #444; padding: 6px; }
+            QPushButton:hover { background-color: #4f4a6d; }
+            QComboBox, QCheckBox, QGroupBox { background-color: #232136; color: #e0def4; }
+            QProgressBar { background-color: #2a273f; color: #e0def4; border: 1px solid #444; }
+        """
+        )
 
         # Set output directory to user's Downloads folder
         self.output_dir = Path(os.path.expanduser("~/Downloads"))
@@ -171,6 +194,12 @@ class PDF2MDGui(QWidget):
         self.converter_thread = None
         self.download_thread = None
         self.temp_pdf_path = None
+
+        # --- Chat session state ---
+        self.chat_session = []  # [{'role': 'user'/'assistant', 'content': ...}]
+        self.markdown_chunks = []  # List of markdown chunks
+        self.ollama_client = OllamaClient()
+        self.loaded_md_path = None
 
     def init_ui(self):
         layout = QVBoxLayout()
@@ -187,6 +216,11 @@ class PDF2MDGui(QWidget):
         self.url_tab = QWidget()
         self.init_url_tab()
         self.tab_widget.addTab(self.url_tab, "Download from URL")
+
+        # Chat tab
+        self.chat_tab = QWidget()
+        self.init_chat_tab()
+        self.tab_widget.addTab(self.chat_tab, "Chat with PDF")
 
         layout.addWidget(self.tab_widget)
 
@@ -240,6 +274,11 @@ class PDF2MDGui(QWidget):
         self.start_btn.clicked.connect(self.start_conversion)
         layout.addWidget(self.start_btn)
 
+        # Chunkify button
+        self.chunk_btn = QPushButton("Create Chunks from Markdown")
+        self.chunk_btn.clicked.connect(self.create_chunks_from_markdown)
+        layout.addWidget(self.chunk_btn)
+
         # Progress/status
         self.status = QTextEdit()
         self.status.setReadOnly(True)
@@ -291,6 +330,69 @@ class PDF2MDGui(QWidget):
         layout.addWidget(self.download_status)
 
         self.url_tab.setLayout(layout)
+
+    def init_chat_tab(self):
+        layout = QVBoxLayout()
+        self.chat_history = QTextEdit()
+        self.chat_history.setReadOnly(True)
+        self.chat_input = QLineEdit()
+        self.chat_input.setPlaceholderText("Ask a question about the PDF/Markdown...")
+        send_btn = QPushButton("Send")
+        send_btn.clicked.connect(self.send_chat_message)
+        input_layout = QHBoxLayout()
+        input_layout.addWidget(self.chat_input)
+        input_layout.addWidget(send_btn)
+        layout.addWidget(self.chat_history)
+        layout.addLayout(input_layout)
+        self.chat_tab.setLayout(layout)
+
+    def send_chat_message(self):
+        user_msg = self.chat_input.text().strip()
+        if not user_msg:
+            return
+        self.chat_history.append(f"<b>You:</b> {user_msg}")
+        self.chat_input.clear()
+        self.chat_history.append("<i>Thinking...</i>")
+
+        # Load Markdown file if not loaded
+        if not self.loaded_md_path:
+            # Try to get from output input
+            md_path = self.out_input.text().strip()
+            if not md_path or not Path(md_path).exists():
+                self.chat_history.append(
+                    "<span style='color:red'>No Markdown file loaded. Please convert a PDF first.</span>"
+                )
+                return
+            self.loaded_md_path = md_path
+            with open(md_path, "r", encoding="utf-8") as f:
+                md_text = f.read()
+            self.markdown_chunks = split_markdown_to_chunks(
+                md_text, max_tokens=1800
+            )  # 1800 to leave room for Q&A
+
+        # RAG: חיפוש צ'אנקים רלוונטיים (פשוט: לפי הופעת מילים מהשאלה)
+        relevant_chunks = []
+        for chunk in self.markdown_chunks:
+            if any(word.lower() in chunk.lower() for word in user_msg.split()):
+                relevant_chunks.append(chunk)
+        if not relevant_chunks:
+            # אם לא נמצא, ניקח את הצ'אנק הראשון
+            relevant_chunks = [self.markdown_chunks[0]]
+        context = "\n\n".join(relevant_chunks)
+        # בונים prompt מלא
+        system_prompt = "You are an expert assistant. Answer questions based on the following document."
+        prompt = f"Document:\n{context}\n\nQuestion: {user_msg}"
+        # בונים היסטוריית שיחה
+        messages = [{"role": "system", "content": system_prompt}]
+        for m in self.chat_session:
+            messages.append(m)
+        messages.append({"role": "user", "content": prompt})
+        # שולחים ל-Ollama
+        answer = self.ollama_client.chat(messages)
+        answer_clean = clean_llm_list_answer(answer)
+        self.chat_history.append(f"<b>Assistant:</b> {answer_clean}")
+        self.chat_session.append({"role": "user", "content": user_msg})
+        self.chat_session.append({"role": "assistant", "content": answer})
 
     def browse_pdf(self):
         file, _ = QFileDialog.getOpenFileName(
@@ -487,6 +589,55 @@ class PDF2MDGui(QWidget):
                     self.delete_temp_file()
                 else:
                     self.status.append(f"ℹ Kept temporary file: {temp_file.name}")
+
+    def create_chunks_from_markdown(self):
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
+        import json
+        from utils.enrichment import enrich_text
+
+        md_path, _ = QFileDialog.getOpenFileName(
+            self, "Select Markdown File", str(self.output_dir), "Markdown Files (*.md)"
+        )
+        if not md_path:
+            return
+        with open(md_path, "r", encoding="utf-8") as f:
+            md_text = f.read()
+        # ניקוי סימנים לא רלוונטיים (אפשר להרחיב בהמשך)
+        clean_text = md_text.replace("```", "").replace("#", "")
+        # חלוקה לפי עמודים
+        page_chunks = split_markdown_by_pages(clean_text)
+        clean_chunks = [
+            clean_chunk_text(chunk) for chunk in page_chunks if chunk.strip()
+        ]
+        # enrichment לכל צ'אנק
+        enriched_chunks = [enrich_text(chunk) for chunk in clean_chunks]
+        out_path = str(Path(md_path).with_name(Path(md_path).stem + "_chunks.json"))
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump({"chunks": enriched_chunks}, f, ensure_ascii=False, indent=2)
+        QMessageBox.information(
+            self, "Chunks Created", f"Chunked file saved to:\n{out_path}"
+        )
+
+
+def clean_llm_list_answer(text: str) -> str:
+    """
+    Clean and format LLM/model answers for readability:
+    - Numbered/bulleted lists on separate lines
+    - Fix broken lines
+    - Remove extra spaces
+    - Fix numbering issues (e.g., '1 0 .' -> '10.')
+    """
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = re.sub(r" +", " ", text)
+    # Combine broken lines within items
+    text = re.sub(r"(?<=\w)\s*\n(?=[a-zA-Z])", " ", text)
+    # Ensure each numbered/bullet item starts on a new line
+    text = re.sub(r"(?<!\n)(\d+\.|\*\*|•)", r"\n\1", text)
+    # Remove extra blank lines
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    # Fix double-digit numbers with space (e.g., '1 0 .' -> '10.')
+    text = re.sub(r"(\d) (\d) \.", r"\1\2.", text)
+    return text.strip()
 
 
 if __name__ == "__main__":

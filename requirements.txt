@@ -24,3 +24,4 @@ tabula-py>=2.6.0
 
 # Optional: For progress bars
 tqdm>=4.64.0 
+requests>=2.25.0 
